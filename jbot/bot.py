@@ -241,14 +241,12 @@ async def myupbot(event):
                 furl = f'https://raw.githubusercontent.com/chiupam/JD_Diy/master/jbot/{res}.py'
             conv.cancel()
         resp = requests.get(f'http://ghproxy.com/{furl}').text
-        if resp.find('404: Not Found') == -1:
+        if resp:
             backfile(fpath)
             with open(fpath, 'w+', encoding='utf-8') as f:
                 f.write(resp)
             await jdbot.edit_message(msg, "准备重启机器人")
             os.system('pm2 restart jbot')
-        elif resp.find('404: Not Found') != -1:
-            await jdbot.edit_message(msg, "下载失败，库还没开放")
         else:
             await jdbot.edit_message(msg, "下载失败，请稍后重试")
     except Exception as e:
@@ -303,8 +301,7 @@ async def mydownload(event):
                     [Button.inline('请帮我取消对话', data='cancel')]
                 ]
                 if resp:
-                    write = True
-                    cmdtext = None
+                    write, cmdtext, own = True, None, False
                     msg = await conv.send_message(f'成功下载{fname_cn}脚本\n现在，请做出你的选择：')
                     msg = await jdbot.edit_message(msg, f'成功下载{fname_cn}脚本\n现在，请做出你的选择：', buttons=btn)
                     convdata = await conv.wait_event(press_event(SENDER))
@@ -313,8 +310,9 @@ async def mydownload(event):
                         write = False
                         msg = await jdbot.edit_message(msg, '对话已取消，感谢你的使用')
                     elif res == 'run_own':
-                        path, cmdtext = f'{_DiyDir}/{fname}', f'{jdcmd} {_DiyDir}/{fname} now'
+                        path, cmdtext = f'{_DiyDir}/{fname}/raw', f'{jdcmd} {_DiyDir}/{fname} now'
                         await jdbot.edit_message(msg, f'{fname_cn}脚本已保存到own目录，并成功在后台运行，请稍后自行查看日志')
+                        own, cron = True, False
                     elif res == 'run_scripts':
                         path, cmdtext = f'{_ScriptsDir}/{fname}', f'{jdcmd} {_ScriptsDir}/{fname} now'
                         await jdbot.edit_message(msg, f'{fname_cn}脚本已保存到scripts目录，并成功在后台运行，请稍后自行查看日志')
@@ -322,6 +320,10 @@ async def mydownload(event):
                         path = f'{res}/{fname}'
                         await jdbot.edit_message(msg, f'机器人文件已保存到{res}目录\n请记得使用 /restart 指令重启机器人')
                         cron = False
+                    elif res == _DiyDir:
+                        path = f'{_DiyDir}/{fname}/raw'
+                        await jdbot.edit_message(msg, f'{fname_cn}脚本已保存到{res}目录，且已添加进定时任务中')
+                        own, cron = True, False
                     else:
                         path = f'{res}/{fname}'
                         await jdbot.edit_message(msg, f'{fname_cn}脚本已保存到{res}目录')
@@ -341,13 +343,24 @@ async def mydownload(event):
                             await jdbot.edit_message(msg, '我已经把它添加进定时任务中了')
                         else:
                             await jdbot.edit_message(msg, '那好吧，会话结束，感谢你的使用')
-                    conv.cancel()
+                    if own:
+                        with open(_ConfigFile, 'r', encoding='utf-8') as f1:
+                            configs = f1.readlines()
+                        for config in configs:
+                            if config.find('自用own任务开始') != -1:
+                                line = configs.index(config)
+                                configs.insert(line + 1, furl)
+                            elif config.find("AutoAddOwnCron") != -1:
+                                break
+                        with open(_ConfigFile, 'w', encoding='utf-8') as f2:
+                            f2.write(''.join(configs))
                     if write:
                         backfile(path)
                         with open(path, 'w+', encoding='utf-8') as f:
                             f.write(resp)
                     if cmdtext:
                         await cmd(cmdtext)
+                    conv.cancel()
                 else:
                     await jdbot.delete_messages(chat_id, start)
                     msg = await conv.send_message('下载失败，请稍后重试')
@@ -488,7 +501,7 @@ async def myaddrepo(event):
                     await jdbot.delete_messages(chat_id, start)
                     await jdbot.send_message(chat_id, '对话已取消，感谢你的使用')
                     conv.cancel()
-                    return 
+                    return
                 elif res == 'input':
                     msg = await conv.send_message("那请回复你所需要设置的值")
                     vname1 = await conv.get_response()
