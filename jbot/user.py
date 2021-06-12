@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # @Author   : Chiupam (https://t.me/chiupam)
-# @Data     : 2021-06-05 17:30
-# @Version  : v 2.1
-# @Updata   : 1. 自动下载 bot.py 并重启机器人
-# @Future   : 1. 
+# @Data     : 2021-06-12 12:14
+# @Version  : v 2.4
+# @Updata   : 1. 修复监控组队瓜分ID的bug
+# @Future   : 1.
 
 
-from .. import chat_id, jdbot, _ConfigDir, logger, api_id, api_hash, proxystart, proxy, _ScriptsDir
-from ..bot.utils import cookies
+from .. import chat_id, jdbot, _ConfigDir, logger, api_id, api_hash, proxystart, proxy, _ScriptsDir, _JdbotDir
+from ..bot.utils import cookies, cmd, press_event, backfile, jdcmd, _DiyDir, V4, QL, _ConfigFile
 from telethon import events, TelegramClient
-import re, json, requests, os
+import re, json, requests, os, asyncio
 
 
 if proxystart:
@@ -18,16 +18,17 @@ if proxystart:
 else:
     client = TelegramClient("diy", api_id, api_hash, connection_retries=None).start()
 
+
 with open(f'{_ConfigDir}/bot.json', 'r', encoding='utf-8') as botf:
     bot_id = int(json.load(botf)['bot_token'].split(':')[0])
 
-    
+
 if not os.path.isfile('/jd/jbot/diy/bot.py'):
     os.system(f'cd /jd/jbot/diy/ && wget https://raw.githubusercontent.com/chiupam/JD_Diy/main/jbot/bot.py')
     if os.path.isfile('/jd/jbot/diy/bot.py'):
         os.system('pm2 restart jbot')
 
-        
+
 # 从 config.sh 中读取 cookies
 def readCookies():
     """
@@ -35,7 +36,7 @@ def readCookies():
     :return: 最新的 cookies 列表
     """
     ckreg = re.compile(r'pt_key=\S*;pt_pin=\S*;')
-    with open(f'{_ConfigDir}/config.sh', 'r', encoding='utf-8') as f:
+    with open(_ConfigFile, 'r', encoding='utf-8') as f:
         lines = f.read()
     cookies = ckreg.findall(lines)
     for cookie in cookies:
@@ -102,7 +103,7 @@ def checkCrontab(cron, PL, fname, fpath):
     with open(crontab_list, 'r', encoding='utf-8') as f1:
         crontab = f1.readlines()
     if crontab[-1] == '\n':
-        del(crontab[-1])
+        del (crontab[-1])
     if key in crontab:
         m = crontab.index(key) + 1
         if crontab[m] != new:
@@ -180,6 +181,21 @@ async def shopbean(event):
 
 
 # @client.on(events.NewMessage(chats=-1001159808620, pattern=r'.*雨'))
+# async def myredrain(event):
+#     """
+#     截取RRA
+#     :param event:
+#     :return:
+#     """
+#     RRA = re.findall(r"RRA.*", event.message.text)
+#     input_RRA = '&'.join(RRA)
+#     start_time = re.findall(re.compile(r"开.*"), event.message.text)
+#     file = '-'.join(start_time[0].split(' ')[1].split(':')[:-1])
+#     with open(f'{_LogDir}/{file}.txt', 'w', encoding='utf-8') as f:
+#         print(input_RRA, file=f)
+
+
+# @client.on(events.NewMessage(chats=-1001159808620, pattern=r'.*雨'))
 # async def redrain(event):
 #     """
 #     替换修改 redrain.js 的 RRA
@@ -219,3 +235,59 @@ async def shopbean(event):
 #         await jdbot.send_message(chat_id, '已完成替换咯')
 #     except Exception as e:
 #         await jdbot.send_message(chat_id, 'something wrong,I\'m sorry\n'+str(e))
+
+
+# 监控组队瓜分ID
+@client.on(events.NewMessage(chats=-1001169232926, pattern=r"^export\s"))
+async def myexport(event):
+    """
+    监控组队瓜分ID
+    """
+    try:
+        message = event.message.text
+        start = await jdbot.send_message(chat_id, "监控到新的 activityId，准备自动替换")
+        kv = message.replace("export ", "").replace("*", "")
+        kname = kv.split("=")[0]
+        with open(_ConfigFile, 'r', encoding='utf-8') as f1:
+            configs = f1.read()
+        if configs.find(kname) != -1:
+            configs = re.sub(f'{kname}=(\"|\')\S+(\"|\')', kv, configs)
+            end = "替换环境变量成功"
+        else:
+            configs += f'export {kv} # 组队瓜分\n'
+            end = "新增环境变量成功"
+        with open(_ConfigFile, 'w', encoding='utf-8') as f2:
+            f2.write(configs)
+        await asyncio.sleep(1.5)
+        await jdbot.delete_messages(chat_id, start)
+        await jdbot.send_message(chat_id, end)
+        await cmd("otask /jd/scripts/npc-new.js now") # 组队瓜分京豆团ID更新后自动执行npc-new.js脚本
+    except Exception as e:
+        await jdbot.send_message(chat_id, 'something wrong,I\'m sorry\n' + str(e))
+        logger.error('something wrong,I\'m sorry\n' + str(e))
+
+
+# 监控并更新文件
+@client.on(events.NewMessage(chats=-1001431256850))
+async def myupuser(event):
+    """
+    关注频道：https://t.me/jd_diy_bot_channel
+    :param event:
+    :return:
+    """
+    try:
+        if event.message.file:
+            fname = event.message.file.name
+            try:
+                if fname.endswith("bot.py") or fname.endswith("user.py"):
+                    path = f'{_JdbotDir}/diy/{fname}'
+                    backfile(path)
+                    await client.download_file(input_location=event.message, file=path)
+                    await jdbot.send_file(chat_id, path, caption='已更新，准备重启')
+                    os.system('pm2 restart jbot')
+            except:
+                return
+    except Exception as e:
+        await jdbot.send_message(chat_id, 'something wrong,I\'m sorry\n' + str(e))
+        logger.error('something wrong,I\'m sorry\n' + str(e))
+
