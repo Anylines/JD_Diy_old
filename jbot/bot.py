@@ -232,7 +232,7 @@ async def myupbot(event):
                 return
             else:
                 fpath = f'{_JdbotDir}/diy/{res}.py'
-                furl = f'https://raw.githubusercontent.com/chiupam/JD_Diy/master/jbot/{res}.py'
+                furl = f'https://raw.githubusercontent.com/Anylines/JD_Diy_old/master/jbot/{res}.py'
             conv.cancel()
         resp = requests.get(f'http://ghproxy.com/{furl}').text
         if resp.find('#!/usr/bin/env python3') == -1:
